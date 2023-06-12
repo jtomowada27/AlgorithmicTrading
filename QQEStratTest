@@ -1,0 +1,112 @@
+//@version=5
+
+strategy('QQEStratTEST', overlay=true)//moving average length 42
+
+// res = input.timeframe("D", "Resolution", ["D","W","M"])
+// london = input.session("0300-1200", "London Session")//was "0300-1200:1234567" i don't understand the 1234567 part
+// ny = input.session("0800-1700", "New York Session")
+// tokyo = input.session("2000-0400", "Tokyo Session")
+// sydney = input.session("1700-0200", "Sydney Session")
+
+RSI_Period = input(14, title='RSI Length')
+SF = input(5, title='RSI Smoothing')
+QQE = input(4.238, title='Fast QQE Factor')
+ThreshHold = input(10, title='Thresh-hold')
+
+src = close
+Wilders_Period = RSI_Period * 2 - 1
+
+Rsi = ta.rsi(src, RSI_Period)
+RsiMa = ta.ema(Rsi, SF)
+AtrRsi = math.abs(RsiMa[1] - RsiMa)
+MaAtrRsi = ta.ema(AtrRsi, Wilders_Period)
+dar = ta.ema(MaAtrRsi, Wilders_Period) * QQE
+
+longband = 0.0
+shortband = 0.0
+trend = 0
+
+DeltaFastAtrRsi = dar
+RSIndex = RsiMa
+newshortband = RSIndex + DeltaFastAtrRsi
+newlongband = RSIndex - DeltaFastAtrRsi
+longband := RSIndex[1] > longband[1] and RSIndex > longband[1] ? math.max(longband[1], newlongband) : newlongband
+shortband := RSIndex[1] < shortband[1] and RSIndex < shortband[1] ? math.min(shortband[1], newshortband) : newshortband
+cross_1 = ta.cross(longband[1], RSIndex)
+trend := ta.cross(RSIndex, shortband[1]) ? 1 : cross_1 ? -1 : nz(trend[1], 1)
+FastAtrRsiTL = trend == 1 ? longband : shortband
+
+// Find all the QQE Crosses
+QQExlong = 0
+QQExlong := nz(QQExlong[1])
+QQExshort = 0
+QQExshort := nz(QQExshort[1])
+QQExlong := FastAtrRsiTL < RSIndex ? QQExlong + 1 : 0
+QQExshort := FastAtrRsiTL > RSIndex ? QQExshort + 1 : 0
+
+//Conditions
+qqeLong = QQExlong == 1 ? FastAtrRsiTL[1] - 50 : na
+qqeShort = QQExshort == 1 ? FastAtrRsiTL[1] - 50 : na
+// Plotting
+plotshape(qqeLong, title='QQE long', text='Long', textcolor=color.new(color.white, 0), style=shape.labelup, location=location.belowbar, color=color.new(color.green, 0), size=size.tiny)
+plotshape(qqeShort, title='QQE short', text='Short', textcolor=color.new(color.white, 0), style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 0), size=size.tiny)
+
+//MOVING AVERAGE CODE---------------------------------------------------------------------------------------
+len = input.int(1, minval=1, title="Length")
+source = input(close, title="Source")
+offset = input.int(title="Offset", defval=0, minval=-500, maxval=500)
+out = ta.sma(source, len)
+plot(out, color=color.white, title="MA", offset=offset)
+//MOVING AVERAGE CODE---------------------------------------------------------------------------------------
+
+//TREND MAGIC CODE-------------------------------------------------------------------------------------------------------------------------------------
+period = input(14, 'CCI period')
+coeff = input(1, 'ATR Multiplier')
+AP = input(1, 'ATR Period')
+ATR = ta.sma(ta.tr, AP)
+src2 = input(close)
+upT = low - ATR * coeff
+downT = high + ATR * coeff
+MagicTrend = 0.0
+MagicTrend := ta.cci(src2, period) >= 0 ? upT < nz(MagicTrend[1]) ? nz(MagicTrend[1]) : upT : downT > nz(MagicTrend[1]) ? nz(MagicTrend[1]) : downT
+color1 = ta.cci(src2, period) >= 0 ? #0022FC : #FC0400
+plot(MagicTrend, color=color1, linewidth=3)
+
+longCondition = ta.crossover(out, MagicTrend)
+shortCondition = ta.crossunder(out, MagicTrend)
+plotshape(longCondition, title='TM long', text='TML', textcolor=color.new(color.white, 0), style=shape.labelup, location=location.belowbar, color=color.new(color.green, 0), size=size.tiny)
+plotshape(shortCondition, title='TM short', text='TMS', textcolor=color.new(color.white, 0), style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 0), size=size.tiny)
+//TREND MAGIC CODE-------------------------------------------------------------------------------------------------------------------------------------
+
+// Entry Logic
+var lcounter = 0
+var scounter = 0
+var ltmcount = 0
+var stmcount = 0
+qqelongCondition = ta.crossover(RsiMa, FastAtrRsiTL)
+tmlongCondition = ta.crossover(out, MagicTrend)
+qqeshortCondition = ta.crossover(FastAtrRsiTL, RsiMa)
+tmshortCondition = ta.crossunder(out, MagicTrend)
+
+//if((hour(time, "UTC-7") == 4 or hour(time, "UTC-7") == 8))
+if(qqelongCondition)
+    lcounter := lcounter + 1
+    scounter := 0
+    //label.new(bar_index,high,str.tostring(lcounter),color=color.white)
+if(tmlongCondition)
+    ltmcount := ltmcount + 1
+    stmcount := 0
+    //label.new(bar_index,high,str.tostring(ltmcount),color=color.white)
+if(lcounter >= 1 and ltmcount >= 1)
+    strategy.entry("Long Entry", strategy.long)
+
+if(qqeshortCondition)
+    scounter := scounter + 1
+    lcounter := 0
+    //label.new(bar_index,high,str.tostring(lcounter),color=color.blue)
+if(tmshortCondition)
+    stmcount := stmcount + 1
+    ltmcount := 0
+    //label.new(bar_index,high,str.tostring(stmcount),color=color.blue)
+if(scounter >= 1 and stmcount >= 1)
+    strategy.entry("Short Entry", strategy.short)
